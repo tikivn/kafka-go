@@ -81,19 +81,20 @@ type Reader struct {
 	msgs chan readerMessage
 
 	// mutable fields of the reader (synchronized on the mutex)
-	mutex        sync.Mutex
-	join         sync.WaitGroup
-	cancel       context.CancelFunc
-	stop         context.CancelFunc
-	done         chan struct{}
-	commits      chan commitRequest
-	version      int64 // version holds the generation of the spawned readers
-	offset       int64
-	lag          int64
-	closed       bool
-	address      string // address of group coordinator
-	generationID int32  // generationID of group
-	memberID     string // memberID of group
+	mutex           sync.Mutex
+	join            sync.WaitGroup
+	cancel          context.CancelFunc
+	stop            context.CancelFunc
+	done            chan struct{}
+	commits         chan commitRequest
+	version         int64 // version holds the generation of the spawned readers
+	offset          int64
+	autoOffsetReset int64
+	lag             int64
+	closed          bool
+	address         string // address of group coordinator
+	generationID    int32  // generationID of group
+	memberID        string // memberID of group
 
 	// offsetStash should only be managed by the commitLoopInterval.  We store
 	// it here so that it survives rebalances
@@ -505,7 +506,7 @@ func (r *Reader) fetchOffsets(conn *Conn, subs map[string][]int32) (map[int]int6
 				offset := pr.Offset
 				if offset < 0 {
 					// No offset stored
-					offset = FirstOffset
+					offset = r.config.AutoOffsetReset
 				}
 				offsetsByPartition[int(partition)] = offset
 			}
@@ -1023,6 +1024,9 @@ type ReaderConfig struct {
 	//
 	// The default is to try 3 times.
 	MaxAttempts int
+
+	//Offset to use when consumer have no offset set for partition
+	AutoOffsetReset int64
 }
 
 // Validate method validates ReaderConfig properties.
@@ -1225,6 +1229,10 @@ func NewReader(config ReaderConfig) *Reader {
 		config.MaxAttempts = 3
 	}
 
+	if config.AutoOffsetReset == 0 {
+		config.AutoOffsetReset = FirstOffset
+	}
+
 	// when configured as a consumer group; stats should report a partition of -1
 	readerStatsPartition := config.Partition
 	if config.GroupID != "" {
@@ -1246,7 +1254,7 @@ func NewReader(config ReaderConfig) *Reader {
 		done:    make(chan struct{}),
 		commits: make(chan commitRequest, config.QueueCapacity),
 		stop:    stop,
-		offset:  FirstOffset,
+		offset:  config.AutoOffsetReset,
 		stctx:   stctx,
 		stats: &readerStats{
 			dialTime:   makeSummary(),
