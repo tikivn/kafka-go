@@ -1027,6 +1027,8 @@ type ReaderConfig struct {
 
 	//Offset to use when consumer have no offset set for partition
 	AutoOffsetReset int64
+
+	OnBalance func(offsetsByPartition map[int]int64)
 }
 
 // Validate method validates ReaderConfig properties.
@@ -1686,6 +1688,10 @@ func (r *Reader) start(offsetsByPartition map[int]int64) {
 	if r.closed {
 		// don't start child reader if parent Reader is closed
 		return
+	}
+
+	if r.config.OnBalance != nil {
+		r.config.OnBalance(offsetsByPartition)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
